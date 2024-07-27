@@ -27,15 +27,14 @@ general_generator = torch.Generator()
 general_generator.manual_seed(RANDOM_SEED)
 # Create a training generator to isolate the train dataloader from
 # other dataloaders and better control non-deterministic behavior
-train_generator = torch.Generator()
-train_generator.manual_seed(RANDOM_SEED)
+#train_generator = torch.Generator()
+#train_generator.manual_seed(RANDOM_SEED)
 
 
 def seed_worker(worker_id):
     worker_seed = torch.initial_seed() % 2 ** 32
     np.random.seed(worker_seed)
     random.seed(worker_seed)
-
 
 def add_args(parser):
     """Adds arguments for parser."""
@@ -86,6 +85,24 @@ def test(config, data_loader_dict):
         raise ValueError('Your Model is Not Supported  Yet!')
     model_trainer.test(data_loader_dict)
 
+def extract_data(config, data_loader):
+    if config.MODEL.NAME == "Physnet":
+        model_trainer = trainer.PhysnetTrainer.PhysnetTrainer(config, data_loader_dict)
+    elif config.MODEL.NAME == "Tscan":
+        model_trainer = trainer.TscanTrainer.TscanTrainer(config, data_loader_dict)
+    elif config.MODEL.NAME == "EfficientPhys":
+        model_trainer = trainer.EfficientPhysTrainer.EfficientPhysTrainer(config, data_loader_dict)
+    elif config.MODEL.NAME == 'DeepPhys':
+        model_trainer = trainer.DeepPhysTrainer.DeepPhysTrainer(config, data_loader_dict)
+    elif config.MODEL.NAME == 'BigSmall':
+        model_trainer = trainer.BigSmallTrainer.BigSmallTrainer(config, data_loader_dict)
+    elif config.MODEL.NAME == 'PhysFormer':
+        model_trainer = trainer.PhysFormerTrainer.PhysFormerTrainer(config, data_loader_dict)
+    elif config.MODEL.NAME == 'RhythmFormer':
+        model_trainer = trainer.RhythmFormerTrainer.RhythmFormerTrainer(config, data_loader_dict)
+    else:
+        raise ValueError('Your Model is Not Supported  Yet!')
+    model_trainer.extract(data_loader_dict)
 
 def unsupervised_method_inference(config, data_loader):
     if not config.UNSUPERVISED.METHOD:
@@ -285,8 +302,47 @@ if __name__ == "__main__":
             generator=general_generator
         )
 
+    elif config.TOOLBOX_MODE == "extract_only":
+
+        if config.EXTRACT.DATA.DATASET == "COHFACE":
+            # unsupervised_loader = data_loader.COHFACELoader.COHFACELoader
+            raise ValueError("Unsupported dataset! Currently supporting UBFC, PURE, MMPD, and SCAMPS.")
+        elif config.EXTRACT.DATA.DATASET == "UBFC-rPPG":
+            extract_loader = data_loader.UBFCrPPGLoader.UBFCrPPGLoader
+        elif config.EXTRACT.DATA.DATASET == "PURE":
+            extract_loader = data_loader.PURELoader.PURELoader
+        elif config.EXTRACT.DATA.DATASET == "SCAMPS":
+            extract_loader = data_loader.SCAMPSLoader.SCAMPSLoader
+        elif config.EXTRACT.DATA.DATASET == "MMPD":
+            extract_loader = data_loader.MMPDLoader.MMPDLoader
+        elif config.EXTRACT.DATA.DATASET == "BP4DPlus":
+            extract_loader = data_loader.BP4DPlusLoader.BP4DPlusLoader
+        elif config.EXTRACT.DATA.DATASET == "UBFC-PHYS":
+            extract_loader = data_loader.UBFCPHYSLoader.UBFCPHYSLoader
+            # added for EngageNet
+        elif config.EXTRACT.DATA.DATASET == "EngageNet":
+            extract_loader = data_loader.EngageNetLoader.EngageNetLoader
+        else:
+            raise ValueError("Unsupported dataset!")
+
+        if config.EXTRACT.DATA.DATASET and config.EXTRACT.DATA.DATA_PATH:
+            extraction_data = extract_loader(
+                name="extract",
+                data_path=config.EXTRACT.DATA.DATA_PATH,
+                config_data=config.EXTRACT.DATA)
+            data_loader_dict["extract"] = DataLoader(
+                dataset=extraction_data,
+                num_workers=16,
+                batch_size=config.INFERENCE.BATCH_SIZE,
+                shuffle=False,
+                worker_init_fn=seed_worker,
+                generator=general_generator
+            )
+        else:
+            data_loader_dict['extract'] = None
+
     else:
-        raise ValueError("Unsupported toolbox_mode! Currently support train_and_test or only_test or unsupervised_method.")
+        raise ValueError("Unsupported toolbox_mode! Currently support train_and_test or only_test or unsupervised_method or extract_only.")
 
     if config.TOOLBOX_MODE == "train_and_test":
         train_and_test(config, data_loader_dict)
@@ -294,5 +350,8 @@ if __name__ == "__main__":
         test(config, data_loader_dict)
     elif config.TOOLBOX_MODE == "unsupervised_method":
         unsupervised_method_inference(config, data_loader_dict)
+    elif config.TOOLBOX_MODE == "extract_only":
+        extract_data(config, data_loader_dict)
     else:
-        print("TOOLBOX_MODE only support train_and_test or only_test !", end='\n\n')
+        print("TOOLBOX_MODE only support train_and_test, only_test, or extranct_only!", end='\n\n')
+

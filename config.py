@@ -267,6 +267,47 @@ _C.UNSUPERVISED.DATA.PREPROCESS.RESIZE = CN()
 _C.UNSUPERVISED.DATA.PREPROCESS.RESIZE.W = 128
 _C.UNSUPERVISED.DATA.PREPROCESS.RESIZE.H = 128
 
+# -----------------------------------------------------------------------------
+# Extract only mode settings (Stephanie)
+# -----------------------------------------------------------------------------\
+_C.EXTRACT = CN()
+_C.EXTRACT.BATCH_SIZE = 4
+_C.EXTRACT.MODEL_FILE_NAME = 'PURE_MMPD_RhythmFormer' ##
+
+_C.EXTRACT.DATA = CN()
+_C.EXTRACT.DATA.FS = 0 
+_C.EXTRACT.DATA.DATASET = ''
+_C.EXTRACT.DATA.DATA_FORMAT = 'NDCHW'
+_C.EXTRACT.DATA.DATA_PATH = ''
+_C.EXTRACT.DATA.CACHED_PATH = 'PreprocessedData'
+_C.EXTRACT.DATA.EXP_DATA_NAME = ''
+_C.EXTRACT.DATA.BEGIN = 0.0
+_C.EXTRACT.DATA.END = 1.0
+_C.EXTRACT.DATA.FILE_LIST_PATH = os.path.join(_C.EXTRACT.DATA.CACHED_PATH, 'DataFileLists')
+_C.EXTRACT.DATA.DO_PREPROCESS = True ##
+_C.EXTRACT.DATA.METHOD = 'POS' ##
+_C.EXTRACT.DATA.FOLD = CN()
+_C.EXTRACT.DATA.FOLD.FOLD_NAME = ''
+_C.EXTRACT.DATA.FOLD.FOLD_PATH = ''
+
+_C.EXTRACT.DATA.PREPROCESS = CN()
+_C.EXTRACT.DATA.PREPROCESS.DATA_TYPE = ['Raw']
+_C.EXTRACT.DATA.PREPROCESS.LABEL_TYPE = 'Raw'
+_C.EXTRACT.DATA.PREPROCESS.DO_CHUNK = True
+_C.EXTRACT.DATA.PREPROCESS.CHUNK_LENGTH = 180
+_C.EXTRACT.DATA.PREPROCESS.CROP_FACE = CN()
+_C.EXTRACT.DATA.PREPROCESS.CROP_FACE.DO_CROP_FACE = True
+_C.EXTRACT.DATA.PREPROCESS.CROP_FACE.USE_LARGE_FACE_BOX = True
+_C.EXTRACT.DATA.PREPROCESS.CROP_FACE.LARGE_BOX_COEF = 1.5
+_C.EXTRACT.DATA.PREPROCESS.CROP_FACE.DETECTION = CN()
+_C.EXTRACT.DATA.PREPROCESS.CROP_FACE.DETECTION.DO_DYNAMIC_DETECTION = False
+_C.EXTRACT.DATA.PREPROCESS.CROP_FACE.DETECTION.DYNAMIC_DETECTION_FREQUENCY = 30
+_C.EXTRACT.DATA.PREPROCESS.CROP_FACE.DETECTION.USE_MEDIAN_FACE_BOX = False    # This should be used ONLY if dynamic detection is used
+_C.EXTRACT.DATA.PREPROCESS.RESIZE = CN()
+_C.EXTRACT.DATA.PREPROCESS.RESIZE.H = 128
+_C.EXTRACT.DATA.PREPROCESS.RESIZE.W = 128
+_C.EXTRACT.DATA.PREPROCESS.DATA_AUG = ['None']
+    
 ### -----------------------------------------------------------------------------
 # Model settings
 # -----------------------------------------------------------------------------
@@ -358,6 +399,7 @@ def update_config(config, args):
     default_VALID_FILE_LIST_PATH = config.VALID.DATA.FILE_LIST_PATH
     default_TEST_FILE_LIST_PATH = config.TEST.DATA.FILE_LIST_PATH
     default_UNSUPERVISED_FILE_LIST_PATH = config.UNSUPERVISED.DATA.FILE_LIST_PATH
+    default_EXTRACT_FILE_LIST_PATH = config.EXTRACT.DATA.FILE_LIST_PATH
 
     # update flag from config file
     _update_config_from_file(config, args.config_file)
@@ -468,6 +510,43 @@ def update_config(config, args):
         raise ValueError('User specified TEST dataset FILE_LIST_PATH .csv file already exists. \
                          Please turn DO_PREPROCESS to False or delete existing TEST dataset FILE_LIST_PATH .csv file.')
     
+####################
+    # UPDATE EXTRACT PATHS
+    if config.EXTRACT.DATA.FILE_LIST_PATH == default_TEST_FILE_LIST_PATH:
+        config.EXTRACT.DATA.FILE_LIST_PATH = os.path.join(config.EXTRACT.DATA.CACHED_PATH, 'DataFileLists')
+
+    if config.EXTRACT.DATA.EXP_DATA_NAME == '':
+        config.EXTRACT.DATA.EXP_DATA_NAME = "_".join([config.EXTRACT.DATA.DATASET, "SizeW{0}".format(
+            str(config.EXTRACT.DATA.PREPROCESS.RESIZE.W)), "SizeH{0}".format(str(config.EXTRACT.DATA.PREPROCESS.RESIZE.H)), "ClipLength{0}".format(
+            str(config.EXTRACT.DATA.PREPROCESS.CHUNK_LENGTH)), "DataType{0}".format("_".join(config.EXTRACT.DATA.PREPROCESS.DATA_TYPE)),
+                                      "DataAug{0}".format("_".join(config.EXTRACT.DATA.PREPROCESS.DATA_AUG)),
+                                      "LabelType{0}".format(config.EXTRACT.DATA.PREPROCESS.LABEL_TYPE),
+                                      "Crop_face{0}".format(config.EXTRACT.DATA.PREPROCESS.CROP_FACE.DO_CROP_FACE),
+                                      "Large_box{0}".format(config.EXTRACT.DATA.PREPROCESS.CROP_FACE.USE_LARGE_FACE_BOX),
+                                      "Large_size{0}".format(config.EXTRACT.DATA.PREPROCESS.CROP_FACE.LARGE_BOX_COEF),
+                                      "Dyamic_Det{0}".format(config.EXTRACT.DATA.PREPROCESS.CROP_FACE.DETECTION.DO_DYNAMIC_DETECTION),
+                                        "det_len{0}".format(config.EXTRACT.DATA.PREPROCESS.CROP_FACE.DETECTION.DYNAMIC_DETECTION_FREQUENCY),
+                                        "Median_face_box{0}".format(config.EXTRACT.DATA.PREPROCESS.CROP_FACE.DETECTION.USE_MEDIAN_FACE_BOX)
+                                              ])
+    config.EXTRACT.DATA.CACHED_PATH = os.path.join(config.EXTRACT.DATA.CACHED_PATH, config.EXTRACT.DATA.EXP_DATA_NAME)
+
+    name, ext = os.path.splitext(config.EXTRACT.DATA.FILE_LIST_PATH)
+    if not ext: # no file extension
+        FOLD_STR = '_' + config.EXTRACT.DATA.FOLD.FOLD_NAME if config.EXTRACT.DATA.FOLD.FOLD_NAME else ''
+        config.EXTRACT.DATA.FILE_LIST_PATH = os.path.join(config.EXTRACT.DATA.FILE_LIST_PATH, \
+                                                       config.EXTRACT.DATA.EXP_DATA_NAME + '_' + \
+                                                       str(config.EXTRACT.DATA.BEGIN) + '_' + \
+                                                       str(config.EXTRACT.DATA.END) + \
+                                                       FOLD_STR + '.csv')
+    elif ext != '.csv':
+        raise ValueError('Stephanie: original error message copied from TEST part: EXTRACT dataset FILE_LIST_PATH must either be a directory path or a .csv file name')
+
+    if ext == '.csv' and config.EXTRACT.DATA.DO_PREPROCESS:
+        raise ValueError('Stephanie: original error message copied from TEST part: User specified EXTRACT dataset FILE_LIST_PATH .csv file already exists. \
+                         Please turn DO_PREPROCESS to False or delete existing EXTRACT dataset FILE_LIST_PATH .csv file.')
+    
+
+####################
 
     # UPDATE MODEL_FILE_NAME IF NEEDED
     if any(aug != 'None' for aug in config.TRAIN.DATA.PREPROCESS.DATA_AUG + config.VALID.DATA.PREPROCESS.DATA_AUG + config.TEST.DATA.PREPROCESS.DATA_AUG):
