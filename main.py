@@ -353,5 +353,5 @@ if __name__ == "__main__":
     elif config.TOOLBOX_MODE == "extract_only":
         extract_data(config, data_loader_dict)
     else:
-        print("TOOLBOX_MODE only support train_and_test, only_test, or extranct_only!", end='\n\n')
+        print("TOOLBOX_MODE only support train_and_test, only_test, or extract_only!", end='\n\n')
 
