@@ -222,7 +222,7 @@ class RhythmFormerTrainer(BaseTrainer):
 
             preds_by_vid = [[filename] + list(predictions) for filename, predictions in predictions_dict.items()]
             preds_by_vid_df = pd.DataFrame(preds_by_vid)
-            preds_by_vid_df.columns = ['filename'] + [f'{i}' for i in range(0, 296)]  ########
+            preds_by_vid_df.columns = ['filename'] + [f'{i}' for i in range(0, chunk_len)]  ########
             preds_by_vid_df.to_csv('predictions_by_vid.csv', index=False)
             
             predictions_df = pd.DataFrame(predictions_list)
