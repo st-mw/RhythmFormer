@@ -361,7 +361,7 @@ class BaseLoader(Dataset):
         clip_num = frames.shape[0] // chunk_length
         frames_clips = [frames[i * chunk_length:(i + 1) * chunk_length] for i in range(clip_num)]
         bvps_clips = [bvps[i * chunk_length:(i + 1) * chunk_length] for i in range(clip_num)]
-        return np.array(frames_clips), np.array(bvps_clips)
+        return np.array(frames), np.array(bvps)
 
     def save(self, frames_clips, bvps_clips, filename):
         """Save all the chunked data.
@@ -426,6 +426,7 @@ class BaseLoader(Dataset):
             file_list_dict(Dict): Dictionary containing information regarding processed data ( path names)
         """
         print('Preprocessing dataset...')
+
         file_num = len(data_dirs)
         choose_range = range(0, file_num)
         pbar = tqdm(list(choose_range))
