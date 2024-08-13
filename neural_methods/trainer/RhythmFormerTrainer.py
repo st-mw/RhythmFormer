@@ -1,6 +1,7 @@
 """Trainer for RhythmFormer."""
 import os
 import numpy as np
+import pandas as pd
 import torch
 import torch.optim as optim
 import random
@@ -18,10 +19,10 @@ class RhythmFormerTrainer(BaseTrainer):
         self.device = torch.device(config.DEVICE)
         self.max_epoch_num = config.TRAIN.EPOCHS
         self.model_dir = config.MODEL.MODEL_DIR
-        self.model_file_name = config.TRAIN.MODEL_FILE_NAME
-        self.batch_size = config.TRAIN.BATCH_SIZE
+        self.model_file_name = config.EXTRACT.MODEL_FILE_NAME
+        self.batch_size = config.EXTRACT.BATCH_SIZE
         self.num_of_gpu = config.NUM_OF_GPU_TRAIN
-        self.chunk_len = config.TRAIN.DATA.PREPROCESS.CHUNK_LENGTH
+        self.chunk_len = config.EXTRACT.DATA.PREPROCESS.CHUNK_LENGTH
         self.config = config
         self.min_valid_loss = None
         self.best_epoch = 0
@@ -41,8 +42,9 @@ class RhythmFormerTrainer(BaseTrainer):
         elif config.TOOLBOX_MODE == "only_test":
             self.model = RhythmFormer().to(self.device)
             self.model = torch.nn.DataParallel(self.model, device_ids=list(range(config.NUM_OF_GPU_TRAIN)))
-        else:
-            raise ValueError("EfficientPhys trainer initialized in incorrect toolbox mode!")
+        elif config.TOOLBOX_MODE == 'extract_only':
+            self.model = RhythmFormer().to(self.device)
+            self.model = torch.nn.DataParallel(self.model, device_ids=list(range(config.NUM_OF_GPU_TRAIN)))
 
     def train(self, data_loader):
         """Training routine for model"""
@@ -156,9 +158,9 @@ class RhythmFormerTrainer(BaseTrainer):
                 chunk_len = self.chunk_len
                 data_test, labels_test = test_batch[0].to(self.config.DEVICE), test_batch[1].to(self.config.DEVICE)
                 pred_ppg_test = self.model(data_test)
-                pred_ppg_test = (pred_ppg_test-torch.mean(pred_ppg_test, axis=-1).view(-1, 1))/torch.std(pred_ppg_test, axis=-1).view(-1, 1)    # normalize
+                pred_ppg_test = (pred_ppg_test-torch.mean(pred_ppg_test, axis=-1).view(-1, 1))/torch.std(pred_ppg_test, axis=-1).view(-1, 1)
                 labels_test = labels_test.view(-1, 1)
-                pred_ppg_test = pred_ppg_test.view( -1 , 1)
+                pred_ppg_test = pred_ppg_test.view(-1 , 1)
                 for ib in range(batch_size):
                     subj_index = test_batch[2][ib]
                     sort_index = int(test_batch[3][ib])
@@ -170,6 +172,62 @@ class RhythmFormerTrainer(BaseTrainer):
             print(' ')
             calculate_metrics(predictions, labels, self.config)
 
+    def extract(self, data_loader):
+        """ Just extract rPPG. Adapted from test() above """
+        if data_loader["extract"] is None:
+            raise ValueError("No data for extract")
+        
+        print('')
+        print("===Extracting===")
+
+        if not os.path.exists(self.config.INFERENCE.MODEL_PATH):
+            raise ValueError("Inference model path error! Please check INFERENCE.MODEL_PATH in your yaml.")
+        self.model.load_state_dict(torch.load(self.config.INFERENCE.MODEL_PATH))
+
+        self.model = self.model.to(self.config.DEVICE)
+        self.model.eval()
+
+        predictions_dict = dict()
+        predictions_list = []
+        predictions_list_format2 = []
+        predictions_df = pd.DataFrame(columns=['clip', 'i', 'prediction'])
+
+        with torch.no_grad():
+            for index, extract_batch in enumerate(data_loader['extract']):
+
+                batch_size = extract_batch[0].shape[0]
+                chunk_len = self.chunk_len
+                
+                data_extract = extract_batch[0].to(self.config.DEVICE)
+
+                pred_ppg = self.model(data_extract)
+
+                pred_ppg = pred_ppg.view(-1, 1)
+
+                for ib in range(batch_size):
+                    clip_filename = extract_batch[1][ib]
+                    clip_chunk_id = extract_batch[2][ib]
+                    created_key = f"{clip_filename}_{clip_chunk_id}"
+                    clip_predictions_tensor = pred_ppg[ib * chunk_len:(ib + 1) * chunk_len]
+                    clip_predictions_array = clip_predictions_tensor.cpu().numpy().flatten()
+                    predictions_dict[created_key] = clip_predictions_array  ### predictions_dict[clip_filename] = clip_predictions_array
+
+            for key, array in predictions_dict.items():
+                for idx, value in enumerate(array):
+                    predictions_list.append({
+                        'filename': key,
+                        'i': idx,
+                        'prediction': value
+                    })
+
+            preds_by_vid = [[filename] + list(predictions) for filename, predictions in predictions_dict.items()]
+            preds_by_vid_df = pd.DataFrame(preds_by_vid)
+            preds_by_vid_df.columns = ['filename'] + [f'{i}' for i in range(0, 296)]  ########
+            preds_by_vid_df.to_csv('predictions_by_vid.csv', index=False)
+            
+            predictions_df = pd.DataFrame(predictions_list)
+            predictions_df.to_csv('predictions_by_segment.csv', index=False)
+            print("rPPG saved to predictions_by_vid.csv and predictions_by_segment.csv")
 
     def save_model(self, index):
         if not os.path.exists(self.model_dir):
@@ -178,7 +236,6 @@ class RhythmFormerTrainer(BaseTrainer):
             self.model_dir, self.model_file_name + '_Epoch' + str(index) + '.pth')
         torch.save(self.model.state_dict(), model_path)
         print('Saved Model Path: ', model_path)
-
 
     def data_augmentation(self,data,labels):
         N, D, C, H, W = data.shape
